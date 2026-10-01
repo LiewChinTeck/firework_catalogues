@@ -1,16 +1,715 @@
 import {useRef,useState} from 'react';
 import {useLanguage} from '../context/language.js';
-import {uid,webUrl,videoSource} from '../services/api.js';
-import {checkUpload,saveMedia,deleteMedia} from '../services/media.js';
+
+import {
+  uid,
+  webUrl,
+  videoSource,
+  googleDriveId,
+  googleDriveImageUrl
+} from '../services/api.js';
+
+import {
+  checkUpload,
+  saveMedia,
+  deleteMedia
+} from '../services/media.js';
+
 import useMedia from '../hooks/useMedia.js';
-export default function ProductForm({product,categories,series,onSave,onCancel}){
-  const {t,name}=useLanguage(),[form,setForm]=useState(product||{name:'',nameEn:'',categoryId:'',seriesId:'',coverUrl:'',videoUrl:'',coverMediaId:'',videoMediaId:'',visible:true}),[files,setFiles]=useState({cover:null,video:null}),[error,setError]=useState(''),[busy,setBusy]=useState(false),[checking,setChecking]=useState(0);const lock=useRef(false),tokens=useRef({cover:0,video:0});
-  const cover=useMedia(form.coverMediaId,form.coverUrl,files.cover),video=useMedia(form.videoMediaId,form.videoUrl,files.video);
-  const field=(key,value)=>setForm(f=>({...f,[key]:value,...(key==='categoryId'?{seriesId:''}:{})}));
-  async function choose(kind,event){const file=event.target.files?.[0];event.target.value='';if(!file)return;const token=++tokens.current[kind];setError('');setChecking(c=>c+1);try{await checkUpload(file,kind==='cover'?'image':'video');if(token!==tokens.current[kind])return;setFiles(f=>({...f,[kind]:file}));setForm(f=>({...f,[`${kind}MediaId`]:'',[`${kind}FileName`]:file.name,[`${kind}Url`]:''}));}catch(e){if(token===tokens.current[kind])setError(e.message);}finally{setChecking(c=>c-1);}}
-  function remove(kind){tokens.current[kind]++;setFiles(f=>({...f,[kind]:null}));setForm(f=>({...f,[`${kind}MediaId`]:'',[`${kind}FileName`]:'',[`${kind}Url`]:''}));}
-  async function submit(e){e.preventDefault();if(lock.current||checking)return;setError('');if(!form.name.trim())return setError('Enter a product name.');if(form.videoUrl.trim()&&!videoSource(form.videoUrl.trim()))return setError('Use a YouTube watch / Shorts / share link, or a direct .mp4, .webm or .ogg URL.');if(form.coverUrl.trim()&&!webUrl(form.coverUrl.trim()))return setError('Enter a valid HTTP or HTTPS image URL.');lock.current=true;setBusy(true);const added=[];try{const next={...form,id:form.id||uid(),name:form.name.trim(),nameEn:(form.nameEn||'').trim(),coverUrl:form.coverUrl.trim(),videoUrl:form.videoUrl.trim()};for(const kind of ['cover','video'])if(files[kind]){const id=await saveMedia(files[kind]);added.push(id);next[`${kind}MediaId`]=id;next[`${kind}FileName`]=files[kind].name;next[`${kind}Url`]='';}await onSave(next);}catch(e){await deleteMedia(added).catch(()=>{});setError(e.message);}finally{lock.current=false;setBusy(false);}}
-  return <form className="panel product-form" onSubmit={submit}><div className="panel-heading"><h2>{t(product?'Edit product':'New product')}</h2><button type="button" disabled={busy||checking} className="icon-button" onClick={onCancel} aria-label={t('Close product form')}>×</button></div>{error&&<p className="error" role="alert">{t(error)}</p>}<fieldset disabled={busy||checking}><label>{t('Product name')} *<input autoFocus required maxLength={120} value={form.name} onChange={e=>field('name',e.target.value)} placeholder={t('e.g. Golden sky')}/></label><label>{t('English name (optional)')}<input maxLength={120} value={form.nameEn||''} onChange={e=>field('nameEn',e.target.value)}/></label><div className="form-row"><label>{t('Category')} <small>{t('Optional')}</small><select aria-label={t('Category')} value={form.categoryId} onChange={e=>field('categoryId',e.target.value)}><option value="">{t('Uncategorised')}</option>{categories.map(c=><option key={c.id} value={c.id}>{name(c)}</option>)}</select></label><label>{t('Series')} <small>{t('Optional')}</small><select aria-label={t('Series')} value={form.seriesId} onChange={e=>field('seriesId',e.target.value)}><option value="">{t('No series')}</option>{series.filter(s=>s.categoryId===form.categoryId).map(s=><option key={s.id} value={s.id}>{name(s)}</option>)}</select></label></div>
-    {['cover','video'].map(kind=>{const media=kind==='cover'?cover:video,uploaded=files[kind]||form[`${kind}MediaId`];return <section className="media-field" key={kind}><h3>{t(kind==='cover'?'Product image':'Product video')} <small>{t('Optional')}</small></h3><label>{t(kind==='cover'?'Upload image':'Upload MP4')}<input type="file" accept={kind==='cover'?'.jpg,.jpeg,.png,.webp,.gif':'.mp4,video/mp4'} onChange={e=>choose(kind,e)}/><small>{t(kind==='cover'?'JPG / PNG / WebP / GIF, up to 10 MB.':'MP4, up to 100 MB.')}</small></label>{uploaded&&<p className="file-name">{form[`${kind}FileName`]||t('Uploaded file')}</p>}<label>{t(kind==='cover'?'Cover image link':'Video link')}<input aria-label={t(kind==='cover'?'Cover image link':'Video link')} type="url" disabled={!!uploaded} value={form[`${kind}Url`]} placeholder="https://…" onChange={e=>field(`${kind}Url`,e.target.value)}/><small>{t(uploaded?'Remove the uploaded file to use a link.':'Upload a file or paste a link; both can be left empty.')}</small></label>{media.loading&&<p>{t('Loading media…')}</p>}{media.error&&<p className="error">{t('Local file is missing. Please upload it again.')}</p>}{kind==='cover'&&media.url&&<img className="upload-image-preview" src={media.url} alt={t('Image preview')}/>}{kind==='video'&&uploaded&&media.url&&<video className="upload-video-preview" src={media.url} controls preload="metadata" playsInline/>}{(uploaded||form[`${kind}Url`])&&<button type="button" onClick={()=>remove(kind)}>{t(kind==='cover'?'Remove image':'Remove video')}</button>}</section>;})}
-    <p className="media-note">{t('Uploads stay in this browser. They are not shared with other devices.')}</p><label className="checkbox"><input type="checkbox" checked={form.visible} onChange={e=>field('visible',e.target.checked)}/>{t('Visible in catalogue')}</label><div className="actions"><button type="button" onClick={onCancel}>{t('Cancel')}</button><button className="primary" type="submit">{t(busy?'Saving…':'Save product')}</button></div></fieldset></form>;
+
+export default function ProductForm({
+  product,
+  categories,
+  series,
+  onSave,
+  onCancel
+}){
+  const {t,name}=useLanguage();
+
+  const [form,setForm]=useState(
+    product||{
+      name:'',
+      nameEn:'',
+      categoryId:'',
+      seriesId:'',
+      coverUrl:'',
+      videoUrl:'',
+      coverMediaId:'',
+      videoMediaId:'',
+      visible:true
+    }
+  );
+
+  const [files,setFiles]=useState({
+    cover:null,
+    video:null
+  });
+
+  const [error,setError]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [checking,setChecking]=useState(0);
+
+  const lock=useRef(false);
+
+  const tokens=useRef({
+    cover:0,
+    video:0
+  });
+
+  const cover=useMedia(
+    form.coverMediaId,
+    form.coverUrl,
+    files.cover
+  );
+
+  const video=useMedia(
+    form.videoMediaId,
+    form.videoUrl,
+    files.video
+  );
+
+  const field=(key,value)=>{
+    setForm(f=>({
+      ...f,
+      [key]:value,
+      ...(key==='categoryId'
+        ?{seriesId:''}
+        :{})
+    }));
+  };
+
+  async function choose(kind,event){
+    const file=event.target.files?.[0];
+
+    event.target.value='';
+
+    if(!file)return;
+
+    const token=
+      ++tokens.current[kind];
+
+    setError('');
+    setChecking(c=>c+1);
+
+    try{
+      await checkUpload(
+        file,
+        kind==='cover'
+          ?'image'
+          :'video'
+      );
+
+      if(
+        token!==tokens.current[kind]
+      ){
+        return;
+      }
+
+      setFiles(f=>({
+        ...f,
+        [kind]:file
+      }));
+
+      setForm(f=>({
+        ...f,
+        [`${kind}MediaId`]:'',
+        [`${kind}FileName`]:file.name,
+        [`${kind}Url`]:''
+      }));
+    }catch(e){
+      if(
+        token===tokens.current[kind]
+      ){
+        setError(e.message);
+      }
+    }finally{
+      setChecking(c=>c-1);
+    }
+  }
+
+  function remove(kind){
+    tokens.current[kind]++;
+
+    setFiles(f=>({
+      ...f,
+      [kind]:null
+    }));
+
+    setForm(f=>({
+      ...f,
+      [`${kind}MediaId`]:'',
+      [`${kind}FileName`]:'',
+      [`${kind}Url`]:''
+    }));
+  }
+
+  async function submit(e){
+    e.preventDefault();
+
+    if(lock.current||checking){
+      return;
+    }
+
+    setError('');
+
+    if(!form.name.trim()){
+      setError(
+        'Enter a product name.'
+      );
+
+      return;
+    }
+
+    if(
+      form.videoUrl.trim() &&
+      !videoSource(
+        form.videoUrl.trim()
+      )
+    ){
+      setError(
+        'Use a YouTube link, Google Drive video link, or direct .mp4, .webm or .ogg URL.'
+      );
+
+      return;
+    }
+
+    if(
+      form.coverUrl.trim() &&
+      !webUrl(
+        form.coverUrl.trim()
+      )
+    ){
+      setError(
+        'Enter a valid HTTP or HTTPS image URL.'
+      );
+
+      return;
+    }
+
+    lock.current=true;
+    setBusy(true);
+
+    const added=[];
+
+    try{
+      const next={
+        ...form,
+        id:form.id||uid(),
+        name:form.name.trim(),
+        nameEn:(form.nameEn||'').trim(),
+        coverUrl:form.coverUrl.trim(),
+        videoUrl:form.videoUrl.trim()
+      };
+
+      for(
+        const kind of ['cover','video']
+      ){
+        if(files[kind]){
+          const id=
+            await saveMedia(
+              files[kind]
+            );
+
+          added.push(id);
+
+          next[
+            `${kind}MediaId`
+          ]=id;
+
+          next[
+            `${kind}FileName`
+          ]=files[kind].name;
+
+          next[
+            `${kind}Url`
+          ]='';
+        }
+      }
+
+      await onSave(next);
+    }catch(e){
+      await deleteMedia(
+        added
+      ).catch(()=>{});
+
+      setError(e.message);
+    }finally{
+      lock.current=false;
+      setBusy(false);
+    }
+  }
+
+  const driveCover=
+    form.coverUrl.trim() &&
+    googleDriveId(
+      form.coverUrl.trim()
+    )
+      ?googleDriveImageUrl(
+        form.coverUrl.trim()
+      )
+      :'';
+
+  const externalVideo=
+    form.videoUrl.trim()
+      ?videoSource(
+        form.videoUrl.trim()
+      )
+      :null;
+
+  return (
+    <form
+      className="panel product-form"
+      onSubmit={submit}
+    >
+      <div className="panel-heading">
+        <h2>
+          {t(
+            product
+              ?'Edit product'
+              :'New product'
+          )}
+        </h2>
+
+        <button
+          type="button"
+          disabled={busy||checking}
+          className="icon-button"
+          onClick={onCancel}
+          aria-label={t(
+            'Close product form'
+          )}
+        >
+          ×
+        </button>
+      </div>
+
+      {error&&(
+        <p
+          className="error"
+          role="alert"
+        >
+          {t(error)}
+        </p>
+      )}
+
+      <fieldset
+        disabled={
+          busy||checking
+        }
+      >
+        <label>
+          {t('Product name')} *
+
+          <input
+            autoFocus
+            required
+            maxLength={120}
+            value={form.name}
+            onChange={e=>
+              field(
+                'name',
+                e.target.value
+              )
+            }
+            placeholder={t(
+              'e.g. Golden sky'
+            )}
+          />
+        </label>
+
+        <label>
+          {t(
+            'English name (optional)'
+          )}
+
+          <input
+            maxLength={120}
+            value={
+              form.nameEn||''
+            }
+            onChange={e=>
+              field(
+                'nameEn',
+                e.target.value
+              )
+            }
+          />
+        </label>
+
+        <div className="form-row">
+          <label>
+            {t('Category')}
+
+            <small>
+              {t('Optional')}
+            </small>
+
+            <select
+              aria-label={t(
+                'Category'
+              )}
+              value={
+                form.categoryId
+              }
+              onChange={e=>
+                field(
+                  'categoryId',
+                  e.target.value
+                )
+              }
+            >
+              <option value="">
+                {t(
+                  'Uncategorised'
+                )}
+              </option>
+
+              {categories.map(c=>(
+                <option
+                  key={c.id}
+                  value={c.id}
+                >
+                  {name(c)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            {t('Series')}
+
+            <small>
+              {t('Optional')}
+            </small>
+
+            <select
+              aria-label={t(
+                'Series'
+              )}
+              value={
+                form.seriesId
+              }
+              onChange={e=>
+                field(
+                  'seriesId',
+                  e.target.value
+                )
+              }
+            >
+              <option value="">
+                {t(
+                  'No series'
+                )}
+              </option>
+
+              {series
+                .filter(
+                  s=>
+                    s.categoryId===
+                    form.categoryId
+                )
+                .map(s=>(
+                  <option
+                    key={s.id}
+                    value={s.id}
+                  >
+                    {name(s)}
+                  </option>
+                ))
+              }
+            </select>
+          </label>
+        </div>
+
+        {['cover','video'].map(
+          kind=>{
+            const media=
+              kind==='cover'
+                ?cover
+                :video;
+
+            const uploaded=
+              files[kind]||
+              form[
+                `${kind}MediaId`
+              ];
+
+            return (
+              <section
+                className="media-field"
+                key={kind}
+              >
+                <h3>
+                  {t(
+                    kind==='cover'
+                      ?'Product image'
+                      :'Product video'
+                  )}
+
+                  {' '}
+
+                  <small>
+                    {t('Optional')}
+                  </small>
+                </h3>
+
+                <label>
+                  {t(
+                    kind==='cover'
+                      ?'Upload image'
+                      :'Upload MP4'
+                  )}
+
+                  <input
+                    type="file"
+                    accept={
+                      kind==='cover'
+                        ?'.jpg,.jpeg,.png,.webp,.gif'
+                        :'.mp4,video/mp4'
+                    }
+                    onChange={e=>
+                      choose(
+                        kind,
+                        e
+                      )
+                    }
+                  />
+
+                  <small>
+                    {t(
+                      kind==='cover'
+                        ?'JPG / PNG / WebP / GIF, up to 10 MB.'
+                        :'MP4, up to 100 MB.'
+                    )}
+                  </small>
+                </label>
+
+                {uploaded&&(
+                  <p className="file-name">
+                    {
+                      form[
+                        `${kind}FileName`
+                      ]||
+                      t(
+                        'Uploaded file'
+                      )
+                    }
+                  </p>
+                )}
+
+                <label>
+                  {t(
+                    kind==='cover'
+                      ?'Cover image link'
+                      :'Video link'
+                  )}
+
+                  <input
+                    aria-label={t(
+                      kind==='cover'
+                        ?'Cover image link'
+                        :'Video link'
+                    )}
+                    type="url"
+                    disabled={
+                      !!uploaded
+                    }
+                    value={
+                      form[
+                        `${kind}Url`
+                      ]
+                    }
+                    placeholder="https://…"
+                    onChange={e=>
+                      field(
+                        `${kind}Url`,
+                        e.target.value
+                      )
+                    }
+                  />
+
+                  <small>
+                    {t(
+                      uploaded
+                        ?'Remove the uploaded file to use a link.'
+                        :'Upload a file or paste a link; both can be left empty.'
+                    )}
+                  </small>
+                </label>
+
+                {media.loading&&(
+                  <p>
+                    {t(
+                      'Loading media…'
+                    )}
+                  </p>
+                )}
+
+                {media.error&&(
+                  <p className="error">
+                    {t(
+                      'Local file is missing. Please upload it again.'
+                    )}
+                  </p>
+                )}
+
+                {/* IMAGE */}
+
+                {kind==='cover'&&
+                  driveCover&&(
+                    <img
+                      className="upload-image-preview"
+                      src={driveCover}
+                      alt={t(
+                        'Image preview'
+                      )}
+                    />
+                  )
+                }
+
+                {kind==='cover'&&
+                  !driveCover&&
+                  media.url&&(
+                    <img
+                      className="upload-image-preview"
+                      src={media.url}
+                      alt={t(
+                        'Image preview'
+                      )}
+                    />
+                  )
+                }
+
+                {/* VIDEO */}
+
+                {kind==='video'&&
+                  externalVideo?.type===
+                  'drive'&&(
+                    <iframe
+                      className="upload-video-preview"
+                      src={
+                        externalVideo.url
+                      }
+                      title={t(
+                        'Video preview'
+                      )}
+                      allow="autoplay; fullscreen"
+                      allowFullScreen
+                    />
+                  )
+                }
+
+                {kind==='video'&&
+                  externalVideo?.type===
+                  'embed'&&(
+                    <iframe
+                      className="upload-video-preview"
+                      src={
+                        externalVideo.url
+                      }
+                      title={t(
+                        'Video preview'
+                      )}
+                      allow="autoplay; encrypted-media; picture-in-picture"
+                      allowFullScreen
+                    />
+                  )
+                }
+
+                {kind==='video'&&
+                  externalVideo?.type===
+                  'file'&&(
+                    <video
+                      className="upload-video-preview"
+                      src={
+                        externalVideo.url
+                      }
+                      controls
+                      preload="metadata"
+                      playsInline
+                    />
+                  )
+                }
+
+                {kind==='video'&&
+                  !externalVideo&&
+                  uploaded&&
+                  media.url&&(
+                    <video
+                      className="upload-video-preview"
+                      src={media.url}
+                      controls
+                      preload="metadata"
+                      playsInline
+                    />
+                  )
+                }
+
+                {(uploaded||
+                  form[
+                    `${kind}Url`
+                  ])&&(
+                  <button
+                    type="button"
+                    onClick={()=>
+                      remove(kind)
+                    }
+                  >
+                    {t(
+                      kind==='cover'
+                        ?'Remove image'
+                        :'Remove video'
+                    )}
+                  </button>
+                )}
+              </section>
+            );
+          }
+        )}
+
+        <p className="media-note">
+          {t(
+            'Uploads stay in this browser. They are not shared with other devices.'
+          )}
+        </p>
+
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.visible}
+            onChange={e=>
+              field(
+                'visible',
+                e.target.checked
+              )
+            }
+          />
+
+          {t(
+            'Visible in catalogue'
+          )}
+        </label>
+
+        <div className="actions">
+          <button
+            type="button"
+            onClick={onCancel}
+          >
+            {t('Cancel')}
+          </button>
+
+          <button
+            className="primary"
+            type="submit"
+          >
+            {t(
+              busy
+                ?'Saving…'
+                :'Save product'
+            )}
+          </button>
+        </div>
+      </fieldset>
+    </form>
+  );
 }
