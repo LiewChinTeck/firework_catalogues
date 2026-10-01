@@ -1,0 +1,2 @@
+import {useLanguage} from '../context/language.js';
+export default function LanguageSwitch(){const {lang,setLang}=useLanguage();return <div className="language-switch" role="group" aria-label={lang==='zh'?'切换语言':'Select language'}><button lang="zh-CN" aria-pressed={lang==='zh'} className={lang==='zh'?'active':''} onClick={()=>setLang('zh')}>中文</button><button lang="en" aria-pressed={lang==='en'} className={lang==='en'?'active':''} onClick={()=>setLang('en')}>EN</button></div>;}
